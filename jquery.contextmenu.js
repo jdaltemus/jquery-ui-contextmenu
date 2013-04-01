@@ -9,7 +9,7 @@
  */
 
 (function ($) {
-  function getMenuFromEvent(event){
+	function getMenuFromEvent(event){
 		var menu = $(event.target).closest(":ui-menu"),
 		$menu = $(menu);
 		return $menu.data("ui-menu") || $menu.data("menu");
@@ -19,6 +19,7 @@
 		options: {
 			delegate: "[data-menu]",  // selector
 			menu: null,      // selector or jQuery or a function returning such
+//			preventBuiltinMenu: true,
 			// Events:
 			beforeopen: $.noop, // menu about to open; return `false` to prevent opening
 			blur: $.noop,       // menu option lost focus
@@ -30,13 +31,17 @@
 			select: $.noop      // menu option was selected; return `false` to prevent closing
 		},
 		_create: function () {
-			var self = this;
-			this.element.delegate(this.options.delegate, "click", $.proxy(this._openMenu, this));
+		    this.element.delegate(this.options.delegate, "contextmenu.contextmenu", $.proxy(this._openMenu, this));
+//		    if(this.options.preventBuiltinMenu){
+//		        this.element.delegate(this.options.delegate, "contextmenu.contextmenu", function(event){
+//		            return false;
+//		        });
+//		    }
 			this._trigger("init");
 		},
 		/** Return menu jQuery object. */
 		_getMenu: function(){
-			// this.options.menu may be a string, jQuery or a function returnig that.
+			// this.options.menu may be a string, jQuery or a function returning that.
 			var $menu = this.options.menu;
 			if( $.isFunction($menu) ){
 				$menu = $menu();
@@ -50,11 +55,19 @@
 		},
 		/** Open dropdown. */
 		_openMenu: function(event){
+            var self = this, 
+                $menu = this._getMenu(),
+                openEvent = event;
+		    // Prevent browser from opening the system context menu
+		    event.preventDefault();
+            // Also pass the target that the menu was triggered on as 'relatedTarget'.
+		    // This is required because our _trigger() calls will create events
+		    // that refer to the contextmenu's context (which is the target *container*) 
+            event.relatedTarget = openEvent.target;
+            
 			if( this._trigger("beforeopen", event) === false ){
 				return false;
 			}
-			var self = this, 
-				$menu = this._getMenu();
 			// Create - but hide - context-menu
 			$menu
 				.hide()
@@ -65,7 +78,9 @@
 					create: $.proxy(this.options.create, this),
 					focus: $.proxy(this.options.focus, this),
 					select: function(event, ui){
-						if( self._trigger("select", event, ui) !== false ){
+//					    // Also pass the target that the menu was triggered on:
+					    event.relatedTarget = openEvent.target;
+						if( self._trigger.call(self, "select", event, ui) !== false ){
 							self._closeMenu.call(self);
 						}
 					}
@@ -75,7 +90,7 @@
 				if( event.which === $.ui.keyCode.ESCAPE ){
 					self._closeMenu();
 				}
-			}).bind("mousedown.contextmenu", function(event){
+			}).bind("mousedown.contextmenu touchstart.contextmenu", function(event){
 				// Close menu when clicked outside menu
 				if( !$(event.target).closest(".ui-menu-item").length ){
 					self._closeMenu();
@@ -83,14 +98,16 @@
 			});
 			$menu
 				.css({
-					position: "absolute"
+					position: "absolute",
+					left: 0,
+					top: 0
 				}).position({
 					my: "left top", 
 					at: "left bottom", 
 					of: event, 
 					collision: "fit"
 				}).slideDown("fast", function(){
-					self._trigger("open", event);
+					self._trigger.call(self, "open", event);
 				});
 		},
 		/** Close dropdown. */
@@ -101,11 +118,18 @@
 				self._trigger("close");
 			});
 		},
-		/**
-		 * Handle $().contextmenu("option", ...) calls. 
-		 */
-		_setOption: function(key, value){
-			$.Widget.prototype._setOption.apply(this, arguments);
-		}
+        /**
+         * Handle $().contextmenu("option", ...) calls. 
+         */
+        _setOption: function(key, value){
+            $.Widget.prototype._setOption.apply(this, arguments);
+        },
+        /**
+         * Open context menu on a specific target (must match options.delegate) 
+         */
+        open: function(target){
+            var e = jQuery.Event("contextmenu", {target: target.get(0)});
+            return this.element.trigger(e);
+        }
 	});
 } (jQuery));
