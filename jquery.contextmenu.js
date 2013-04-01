@@ -15,13 +15,14 @@
 		return $menu.data("ui-menu") || $menu.data("menu");
 	}
 	$.widget("ui.contextmenu", {
-		version: "0.0.1pre",
+		version: "0.0.1",
 		options: {
 			delegate: "[data-menu]",  // selector
+			ignoreParentSelect: true, // Don't trigger 'select' for sub-menu parents 
 			menu: null,      // selector or jQuery or a function returning such
-//			preventBuiltinMenu: true,
+			taphold: 2000, // open menu after 2000 ms long touch
 			// Events:
-			beforeopen: $.noop, // menu about to open; return `false` to prevent opening
+			beforeOpen: $.noop, // menu about to open; return `false` to prevent opening
 			blur: $.noop,       // menu option lost focus
 			close: $.noop,      // menu was closed
 			create: $.noop,     // menu was initialized
@@ -31,12 +32,32 @@
 			select: $.noop      // menu option was selected; return `false` to prevent closing
 		},
 		_create: function () {
-		    this.element.delegate(this.options.delegate, "contextmenu.contextmenu", $.proxy(this._openMenu, this));
-//		    if(this.options.preventBuiltinMenu){
-//		        this.element.delegate(this.options.delegate, "contextmenu.contextmenu", function(event){
-//		            return false;
-//		        });
-//		    }
+            this.element.delegate(this.options.delegate, "contextmenu.contextmenu", $.proxy(this._openMenu, this));
+            // emulate a 'taphold' event
+            /*
+            this.element.delegate(this.options.delegate, "mousedown.contextmenu", $.proxy(function(event, ui){
+                var self = this;
+                console.log("Event ", event.type, this.timer);
+                if(this.timer){
+                    console.log(" clear " + this.timer);
+                    clearTimeout(this.timer);
+                    this.timer = null;
+                }
+                this.timer = setTimeout(function(){
+                    console.log("Timeout ", event.type, self.timer);
+                    self.open.call(self, $(event.target));
+                    self.timer = null;
+                }, this.options.taphold);
+                console.log("Event started ", event.type, this.timer);
+            }, this));
+            this.element.delegate(this.options.delegate, "mouseup.contextmenu", $.proxy(function(){
+                if(this.timer){
+                    console.log("Event ", event.type, "clear" + this.timer);
+                    clearTimeout(this.timer);
+                    this.timer = null;
+                }
+            }, this));
+            */
 			this._trigger("init");
 		},
 		/** Return menu jQuery object. */
@@ -65,7 +86,7 @@
 		    // that refer to the contextmenu's context (which is the target *container*) 
             event.relatedTarget = openEvent.target;
             
-			if( this._trigger("beforeopen", event) === false ){
+			if( this._trigger("beforeOpen", event) === false ){
 				return false;
 			}
 			// Create - but hide - context-menu
@@ -78,11 +99,14 @@
 					create: $.proxy(this.options.create, this),
 					focus: $.proxy(this.options.focus, this),
 					select: function(event, ui){
-//					    // Also pass the target that the menu was triggered on:
+					    // Also pass the target that the menu was triggered on:
 					    event.relatedTarget = openEvent.target;
-						if( self._trigger.call(self, "select", event, ui) !== false ){
-							self._closeMenu.call(self);
-						}
+					    var isParent = (ui.item.has(">a[aria-haspopup='true']").length > 0);
+					    if( !isParent || !self.options.ignoreParentSelect){
+	                        if( self._trigger.call(self, "select", event, ui) !== false ){
+	                            self._closeMenu.call(self);
+	                        }
+					    }
 					}
 				});
 			// Register global event handlers that close the dropdown-menu
@@ -97,6 +121,7 @@
 				}
 			});
 			$menu
+			    .show() // required to fix positioning error (issue #3)
 				.css({
 					position: "absolute",
 					left: 0,
@@ -106,7 +131,8 @@
 					at: "left bottom", 
 					of: event, 
 					collision: "fit"
-				}).slideDown("fast", function(){
+				}).hide()
+				.slideDown("fast", function(){
 					self._trigger.call(self, "open", event);
 				});
 		},
@@ -114,6 +140,10 @@
 		_closeMenu: function(){
 			var self = this, 
 				$menu = this._getMenu();
+            if(this.timer){
+                clearTimeout(this.timer);
+                this.timer = null;
+            }
 			$menu.fadeOut(function() {
 				self._trigger("close");
 			});
