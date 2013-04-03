@@ -92,4 +92,128 @@
 //				if(this.tapTimer){
 //					console.log(" clear " + this.tapTimer);
 //					clearTimeout(this.tapTimer);
-//					thi
+//					this.tapTimer = null;
+//				}
+//				this.tapTimer = setTimeout(function(){
+//					console.log("Timeout ", event.type, self.tapTimer);
+//					self.open.call(self, $(event.target));
+//					self.tapTimer = null;
+//				}, this.options.taphold);
+//				console.log("Event started ", event.type, this.tapTimer);
+//			}, this));
+//			this.element.delegate(this.options.delegate, "touchend.contextmenu", $.proxy(function(){
+//				if(this.tapTimer){
+//					console.log("Event ", event.type, "clear" + this.tapTimer);
+//					clearTimeout(this.tapTimer);
+//					this.tapTimer = null;
+//				}
+//			}, this));
+			this._trigger("init");
+		},
+		/** Return menu jQuery object. */
+		_getMenu: function(){
+			// this.options.menu may be a string, jQuery or a function returning that.
+			var $menu = this.options.menu;
+			if( $.isFunction($menu) ){
+				$menu = $menu();
+			}
+			return (typeof $menu === "string") ? $($menu) : $menu;
+		},
+		/** Return menu widget instance (works on pre and post jQueryUI 1.9). */
+		_getMenuWidget: function(){
+			var $menu = this._getMenu();
+			return $menu.data("ui-menu") || $menu.data("menu");
+		},
+		/** Open dropdown. */
+		_openMenu: function(event){
+			var self = this,
+				$menu = this._getMenu(),
+				openEvent = event,
+				// if called by 'open' method, 'relatedTarget' is the requested target object
+				target = openEvent.relatedTarget ? openEvent.relatedTarget : openEvent;
+			// Prevent browser from opening the system context menu
+			event.preventDefault();
+			// Also pass the target that the menu was triggered on as 'relatedTarget'.
+			// This is required because our _trigger() calls will create events
+			// that refer to the contextmenu's context (which is the target *container*)
+			event.relatedTarget = openEvent.target;
+
+			if( this._trigger("beforeOpen", event) === false ){
+				return false;
+			}
+			// Create - but hide - context-menu
+			$menu
+				.hide()
+				.addClass("ui-contextmenu")
+				// Create a menu instance that delegates events to our widget
+				.menu({
+					blur: $.proxy(this.options.blur, this),
+					create: $.proxy(this.options.create, this),
+					focus: $.proxy(this.options.focus, this),
+					select: function(event, ui){
+						// Also pass the target that the menu was triggered on:
+						event.relatedTarget = openEvent.target;
+						var isParent = (ui.item.has(">a[aria-haspopup='true']").length > 0);
+						if( !isParent || !self.options.ignoreParentSelect){
+							if( self._trigger.call(self, "select", event, ui) !== false ){
+								self._closeMenu.call(self);
+							}
+						}
+					}
+				});
+			// Register global event handlers that close the dropdown-menu
+			$(document).bind("keydown.contextmenu", function(event){
+				if( event.which === $.ui.keyCode.ESCAPE ){
+					self._closeMenu();
+				}
+			}).bind("mousedown.contextmenu touchstart.contextmenu", function(event){
+				// Close menu when clicked outside menu
+				if( !$(event.target).closest(".ui-menu-item").length ){
+					self._closeMenu();
+				}
+			});
+			$menu
+				.show() // required to fix positioning error (issue #3)
+				.css({
+					position: "absolute",
+					left: 0,
+					top: 0
+				}).position({
+					my: "left top",
+					at: "left bottom",
+					of: target,
+					collision: "fit"
+				}).hide()
+				.slideDown("fast", function(){
+					self._trigger.call(self, "open", event);
+				});
+		},
+		/** Close dropdown. */
+		_closeMenu: function(){
+			var self = this,
+				$menu = this._getMenu();
+			if(this.tapTimer){
+				clearTimeout(this.tapTimer);
+				this.tapTimer = null;
+			}
+			$menu.fadeOut(function() {
+				self._trigger("close");
+			});
+		},
+		/**
+		 * Handle $().contextmenu("option", ...) calls.
+		 */
+		_setOption: function(key, value){
+			$.Widget.prototype._setOption.apply(this, arguments);
+		},
+		/**
+		 * Open context menu on a specific target (must match options.delegate)
+		 */
+		open: function(target){
+			var e = jQuery.Event("contextmenu", {target: target.get(0)});
+			// pass the requested targe piggyback with the event
+			e.relatedTarget = target;
+			return this.element.trigger(e);
+		}
+	});
+} (jQuery));
